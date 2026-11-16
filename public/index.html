@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kurir Kilat — Dashboard Dispatcher</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Header Bar Operasional -->
+  <header class="header">
+    <div class="header-left">
+      <h1 class="brand-title">Kurir Kilat <span class="badge-sub">Dispatcher</span></h1>
+      <div class="run-meta">
+        <span id="run-id" class="chip">Menghubungkan...</span>
+        <span id="run-tick" class="chip">Tick: -/-</span>
+        <span id="strategy" class="chip chip-strategy">Strategi: -</span>
+      </div>
+      <div class="progress-container">
+        <div id="run-progress" class="progress-bar" style="width: 0%"></div>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <div id="conn" class="status-badge disconnected">Menghubungkan...</div>
+      <div id="sim-status" class="chip chip-sim">Sim: Offline</div>
+      <div id="rate-limit-badge" class="chip chip-warn" style="display: none;">429: 0</div>
+      
+      <div class="practice-control">
+        <input type="number" id="seed" placeholder="Seed (opsional)" class="input-seed">
+        <button id="btn-practice" class="btn btn-primary">Run Baru</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Grid Layout -->
+  <main class="dashboard-grid">
+    <!-- Panel Kiri: Peta Live Grid Kota -->
+    <section class="card panel-map">
+      <div class="card-header">
+        <h2>Peta Kota Live (30×30)</h2>
+        <div class="map-legend">
+          <span class="legend-item"><span class="dot courier-idle"></span> Kurir Idle</span>
+          <span class="legend-item"><span class="dot courier-moving"></span> Moving</span>
+          <span class="legend-item"><span class="dot courier-waiting"></span> Waiting</span>
+          <span class="legend-item"><span class="sq restaurant"></span> Restoran</span>
+          <span class="legend-item"><span class="tri dropoff"></span> Dropoff</span>
+        </div>
+      </div>
+      <div class="map-wrapper">
+        <svg id="map" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <pattern id="grid-pattern" width="20" height="20" patternUnits="userSpaceOnUse">
+              <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="1" />
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#grid-pattern)" />
+          <g id="layer-static"></g>
+          <g id="layer-routes"></g>
+          <g id="layer-dynamic"></g>
+        </svg>
+      </div>
+    </section>
+
+    <!-- Panel Kanan Atas: Panel Skor & Grafik Finansial -->
+    <section class="card panel-score">
+      <div class="card-header">
+        <h2>Performa Finansial & Armada</h2>
+      </div>
+      <div class="score-tiles">
+        <div class="tile tile-total">
+          <span class="tile-label">Total Keuntungan</span>
+          <span id="s-total" class="tile-val">Rp 0</span>
+        </div>
+        <div class="tile">
+          <span class="tile-label">Pendapatan</span>
+          <span id="s-revenue" class="tile-val">Rp 0</span>
+        </div>
+        <div class="tile">
+          <span class="tile-label">Denda Penalti</span>
+          <span id="s-penalties" class="tile-val text-danger">Rp 0</span>
+        </div>
+        <div class="tile">
+          <span class="tile-label">Terkirim</span>
+          <span id="s-delivered" class="tile-val text-success">0</span>
+        </div>
+        <div class="tile">
+          <span class="tile-label">Dibatalkan</span>
+          <span id="s-cancelled" class="tile-val text-danger">0</span>
+        </div>
+      </div>
+      <div class="chart-wrapper">
+        <canvas id="score-chart"></canvas>
+      </div>
+    </section>
+
+    <!-- Panel Kanan Bawah: Log Keputusan Dispatcher -->
+    <section class="card panel-log">
+      <div class="card-header">
+        <h2>Log Keputusan Dispatcher</h2>
+        <div class="log-filters">
+          <label><input type="checkbox" data-kind="assign" checked> Assign</label>
+          <label><input type="checkbox" data-kind="rejected" checked> Ditolak</label>
+          <label><input type="checkbox" data-kind="skip" checked> Skip</label>
+          <label><input type="checkbox" data-kind="event" checked> Event</label>
+          <label><input type="checkbox" data-kind="error" checked> Error</label>
+          <label><input type="checkbox" data-kind="info" checked> Info</label>
+        </div>
+      </div>
+      <div class="log-container">
+        <ul id="log" class="log-list"></ul>
+      </div>
+    </section>
+
+    <!-- Panel Bawah Lebar Penuh: Antrean Pesanan Aktif -->
+    <section class="card panel-orders">
+      <div class="card-header">
+        <h2>Daftar Pesanan & Analisis Risiko</h2>
+        <div class="orders-control">
+          <label class="checkbox-label">
+            <input type="checkbox" id="chk-show-finished"> Tampilkan Selesai (50 Terakhir)
+          </label>
+        </div>
+      </div>
+      <div class="table-wrapper">
+        <table id="orders" class="orders-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Status</th>
+              <th>Kurir</th>
+              <th>Restoran → Antar</th>
+              <th>Reward</th>
+              <th>Sisa Waktu</th>
+              <th>ETA Antar</th>
+              <th>Risiko</th>
+            </tr>
+          </thead>
+          <tbody id="orders-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

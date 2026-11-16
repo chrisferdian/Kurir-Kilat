@@ -6,14 +6,19 @@ Program dispatcher otomatis berbasis Node.js dan TypeScript untuk menugaskan pes
 - Node.js versi 20 LTS atau lebih baru.
 - npm (bawaan dari instalasi Node.js).
 
-## Instalasi
+## Cara Cepat (Otomatis Install & Jalankan)
+Tersedia script praktis yang otomatis mendeteksi apakah dependensi sudah terpasang, menginstallnya bila belum, membersihkan port lama, dan menjalankan aplikasi:
 ```bash
-npm install
+./run.sh
+```
+Untuk menghentikan semua proses di port 3000 dan 4000:
+```bash
+./stop.sh
 ```
 
-## Menjalankan Program (1 Perintah)
-Jalankan simulator kota, dispatcher otomatis, dan dashboard operasional sekaligus:
+## Menjalankan Manual
 ```bash
+npm install
 npm start
 ```
 Buka browser di: http://localhost:3000
@@ -79,5 +84,7 @@ test/world.test.ts         Unit test engine simulasi World (10 skenario pengetes
 test/planner.test.ts       Unit test algoritma penugasan rute planner (8 skenario pengetesan).
 test/e2e.test.ts           Pengujian integrasi end-to-end simulator dan dispatcher headless.
 scripts/bench.ts           Script benchmark perbandingan strategi Greedy vs Insertion di 5 seed.
+run.sh                     Script otomatisasi install dependensi & start aplikasi.
+stop.sh                    Script untuk menghentikan semua proses di port 3000 & 4000.
 NOTES.md                   Dokumentasi keputusan arsitektur, trade-off, dan catatan interview.
 ```

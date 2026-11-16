@@ -88,3 +88,11 @@ run.sh                     Script otomatisasi install dependensi & start aplikas
 stop.sh                    Script untuk menghentikan semua proses di port 3000 & 4000.
 NOTES.md                   Dokumentasi keputusan arsitektur, trade-off, dan catatan interview.
 ```
+
+## DEMO
+
+https://github.com/user-attachments/assets/2e283799-c4e4-45e9-bc38-2f1a1dd1a55a
+
+
+
+

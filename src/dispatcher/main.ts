@@ -161,9 +161,10 @@ export async function runDispatcher(opts: {
       for (const [courierId, newStops] of planResult.routes.entries()) {
         const putRes = await client.putRoute(courierId, newStops);
         if (!putRes.ok) {
+          const orderIds = Array.from(new Set(newStops.map((s) => s.order_id))).join(", ");
           store.log(
             "rejected",
-            `Rute ${courierId} ditolak API: [${putRes.code}] ${putRes.message}`,
+            `Rute ${courierId} ditolak API: [${putRes.code}] ${putRes.message} (order: ${orderIds})`,
             undefined,
             courierId
           );

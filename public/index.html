@@ -25,6 +25,7 @@
       <div id="conn" class="status-badge disconnected">Menghubungkan...</div>
       <div id="sim-status" class="chip chip-sim">Sim: Offline</div>
       <div id="rate-limit-badge" class="chip chip-warn" style="display: none;">429: 0</div>
+      <div id="offline-courier-badge" class="chip chip-warn" style="display: none;">Kurir Offline: 0</div>
       
       <div class="practice-control">
         <input type="number" id="seed" placeholder="Seed (opsional)" class="input-seed">
@@ -38,13 +39,14 @@
     <!-- Panel Kiri: Peta Live Grid Kota -->
     <section class="card panel-map">
       <div class="card-header">
-        <h2>Peta Kota Live (30×30)</h2>
+        <h2 id="map-title">Peta Kota Live</h2>
         <div class="map-legend">
           <span class="legend-item"><span class="dot courier-idle"></span> Kurir Idle</span>
           <span class="legend-item"><span class="dot courier-moving"></span> Moving</span>
           <span class="legend-item"><span class="dot courier-waiting"></span> Waiting</span>
           <span class="legend-item"><span class="sq restaurant"></span> Restoran</span>
           <span class="legend-item"><span class="tri dropoff"></span> Dropoff</span>
+          <span class="legend-item"><span class="dot courier-offline"></span> Offline</span>
         </div>
       </div>
       <div class="map-wrapper">

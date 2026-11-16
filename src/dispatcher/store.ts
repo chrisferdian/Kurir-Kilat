@@ -110,6 +110,12 @@ export class Store {
     for (const id of this.knownCourierIds) {
       if (!currentActiveIds.has(id) && !this.missingCouriers.has(id)) {
         this.missingCouriers.add(id);
+        // Hapus penangguhan blokir rute lama terkait kurir yang hilang
+        for (const key of Array.from(this.blockedPairs.keys())) {
+          if (key.endsWith(`|${id}`)) {
+            this.blockedPairs.delete(key);
+          }
+        }
         this.log(
           "event",
           `${id} hilang dari state; order ASSIGNED-nya akan kembali OPEN`,

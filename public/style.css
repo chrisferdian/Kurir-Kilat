@@ -273,6 +273,7 @@ body {
 .courier-idle { background: var(--color-idle); }
 .courier-moving { background: var(--color-moving); }
 .courier-waiting { background: var(--color-waiting); }
+.courier-offline { background: #ef4444; }
 
 .sq.restaurant {
   width: 9px;

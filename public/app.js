@@ -28,6 +28,8 @@
   const elConn = document.getElementById("conn");
   const elSimStatus = document.getElementById("sim-status");
   const elRateLimitBadge = document.getElementById("rate-limit-badge");
+  const elOfflineCourierBadge = document.getElementById("offline-courier-badge");
+  const elMapTitle = document.getElementById("map-title");
   const elSeed = document.getElementById("seed");
   const elBtnPractice = document.getElementById("btn-practice");
 
@@ -155,6 +157,15 @@
       elRateLimitBadge.style.display = "none";
     }
 
+    if (elOfflineCourierBadge) {
+      if (snap.missing_couriers && snap.missing_couriers.length > 0) {
+        elOfflineCourierBadge.style.display = "inline-block";
+        elOfflineCourierBadge.textContent = `Offline: ${snap.missing_couriers.join(", ")}`;
+      } else {
+        elOfflineCourierBadge.style.display = "none";
+      }
+    }
+
     // B. Render Skor & Chart
     if (snap.score) {
       elSTotal.textContent = rupiahFormatter.format(snap.score.total);
@@ -203,6 +214,10 @@
 
   // 3. Render Peta Static (Zona & Restoran)
   function renderMapStatic(map) {
+    if (elMapTitle && map) {
+      elMapTitle.textContent = `Peta Kota Live (${map.width}×${map.height})`;
+    }
+
     const width = map.width * CELL_SIZE;
     const height = map.height * CELL_SIZE;
     svgMap.setAttribute("viewBox", `0 0 ${width} ${height}`);

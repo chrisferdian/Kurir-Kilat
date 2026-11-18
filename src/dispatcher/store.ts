@@ -27,6 +27,7 @@ export class Store {
   public run: RunInfo | null = null;
   public couriers: Courier[] = [];
   public activeOrders: Map<string, Order> = new Map();
+  public allKnownOrders: Map<string, Order> = new Map();
   public finishedOrders: Map<string, OrderView> = new Map(); // Maks 300 terakhir
   public decisions: DecisionLog[] = [];
   public scoreHistory: ScorePoint[] = [];
@@ -60,6 +61,7 @@ export class Store {
     this.run = null;
     this.couriers = [];
     this.activeOrders.clear();
+    this.allKnownOrders.clear();
     this.finishedOrders.clear();
     this.decisions = [];
     this.scoreHistory = [];
@@ -93,6 +95,7 @@ export class Store {
     this.activeOrders.clear();
     for (const order of state.orders) {
       this.activeOrders.set(order.id, order);
+      this.allKnownOrders.set(order.id, order);
     }
 
     const currentActiveIds = new Set(state.couriers.map((c) => c.id));
@@ -138,7 +141,6 @@ export class Store {
       "zone.weather_changed",
       "courier.offline",
       "courier.online",
-      "courier.route_updated",
       "run.finished",
     ]);
 
@@ -147,9 +149,17 @@ export class Store {
         this.eventCursor = ev.seq;
       }
 
-      if (ev.type === "order.delivered") {
+      if (ev.type === "order.created" && ev.data && ev.data.id) {
+        this.allKnownOrders.set(ev.data.id, ev.data);
+      } else if (ev.type === "order.picked_up" && ev.data && ev.data.order_id) {
+        const order = this.allKnownOrders.get(ev.data.order_id);
+        if (order) {
+          order.status = "PICKED_UP";
+          order.courier_id = ev.data.courier_id;
+        }
+      } else if (ev.type === "order.delivered") {
         const { order_id, courier_id, payout, late_ticks } = ev.data;
-        const existing = this.activeOrders.get(order_id);
+        const existing = this.activeOrders.get(order_id) || this.allKnownOrders.get(order_id);
         const orderView: OrderView = existing
           ? {
               ...existing,
@@ -179,13 +189,14 @@ export class Store {
             };
 
         this.finishedOrders.set(order_id, orderView);
+        this.activeOrders.delete(order_id);
         if (this.finishedOrders.size > 300) {
           const firstKey = this.finishedOrders.keys().next().value;
           if (firstKey) this.finishedOrders.delete(firstKey);
         }
       } else if (ev.type === "order.cancelled") {
         const { order_id, penalty } = ev.data;
-        const existing = this.activeOrders.get(order_id);
+        const existing = this.activeOrders.get(order_id) || this.allKnownOrders.get(order_id);
         const orderView: OrderView = existing
           ? {
               ...existing,
@@ -214,6 +225,7 @@ export class Store {
             };
 
         this.finishedOrders.set(order_id, orderView);
+        this.activeOrders.delete(order_id);
         if (this.finishedOrders.size > 300) {
           const firstKey = this.finishedOrders.keys().next().value;
           if (firstKey) this.finishedOrders.delete(firstKey);

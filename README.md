@@ -82,6 +82,8 @@ public/style.css           Gaya visual tema gelap responsif dashboard operasiona
 public/app.js              Logika client-side dashboard (EventSource SSE, SVG grid, Chart.js).
 test/world.test.ts         Unit test engine simulasi World (10 skenario pengetesan).
 test/planner.test.ts       Unit test algoritma penugasan rute planner (8 skenario pengetesan).
+test/failures.test.ts      Unit test ketahanan kegagalan (retry 429, backoff 5xx, offline, unknown event).
+test/dashboard.test.ts     Unit test dashboard SSE stream, snapshot, practice, dan hydration file.
 test/e2e.test.ts           Pengujian integrasi end-to-end simulator dan dispatcher headless.
 scripts/bench.ts           Script benchmark perbandingan strategi Greedy vs Insertion di 5 seed.
 run.sh                     Script otomatisasi install dependensi & start aplikasi.

@@ -212,28 +212,34 @@ export function simulateRoute(
     const order = ordersById.get(orderId);
     if (!order) continue;
 
-    const lateTicks = Math.max(0, eta.dropoff - order.deadline_tick);
-    let payout = order.reward;
-    if (lateTicks > 0) {
-      payout = Math.round(
-        order.reward *
-          Math.max(0, 1 - cfg.ASSUMED_LATE_DECAY_PER_TICK * lateTicks)
-      );
-    }
-
+    let isCancelled = false;
     let cancelPenalty = 0;
     if (eta.pickup !== null) {
       const patience = order.premium
         ? cfg.ASSUMED_PREMIUM_PATIENCE_TICKS
         : cfg.ASSUMED_PATIENCE_TICKS;
       if (eta.pickup > order.created_tick + patience) {
+        isCancelled = true;
         cancelPenalty = Math.round(
           order.reward * cfg.ASSUMED_CANCEL_PENALTY_RATE
         );
       }
     }
 
-    totalValue += payout - cancelPenalty;
+    if (isCancelled) {
+      // Order batal sebelum pickup: tidak ada imbalan payout, dan perusahaan rugi denda pembatalan
+      totalValue -= cancelPenalty;
+    } else {
+      const lateTicks = Math.max(0, eta.dropoff - order.deadline_tick);
+      let payout = order.reward;
+      if (lateTicks > 0) {
+        payout = Math.round(
+          order.reward *
+            Math.max(0, 1 - cfg.ASSUMED_LATE_DECAY_PER_TICK * lateTicks)
+        );
+      }
+      totalValue += payout;
+    }
   }
 
   return {

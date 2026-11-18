@@ -111,9 +111,9 @@ export async function runDispatcher(opts: {
       }
 
       lastProcessedTick = state.run.tick;
-      store.applyState(state);
 
-      // Kuras semua event baru dari stream
+      // 1. Kuras semua event baru dari stream terlebih dahulu
+      // agar pesanan yang selesai/batal di tick ini langsung terdeteksi lengkap sebelum state diperbarui
       let hasMore = true;
       while (hasMore) {
         const eventsRes = await client.getEvents(store.eventCursor, 200);
@@ -123,6 +123,9 @@ export async function runDispatcher(opts: {
         }
         hasMore = eventsRes.has_more;
       }
+
+      // 2. Perbarui state ground truth kurir & pesanan aktif
+      store.applyState(state);
 
       // Periksa apakah run sudah selesai
       if (state.run.status === "finished") {

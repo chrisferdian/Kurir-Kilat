@@ -131,6 +131,8 @@ Dispatcher menerapkan **pendekatan hibrida terkoordinasi**:
 - Menghitung **Marginal Profit ($\Delta$)**:
   $$\Delta = \text{Value}_{\text{baru}} - \text{Value}_{\text{lama}} - (\text{TIME\_COST\_PER\_TICK} \times \Delta_{\text{waktu}})$$
   di mana $\text{Value}$ mengkalkulasi imbalan penuh jika dropoff $\le$ deadline, depresiasi 5%/tick jika terlambat, dan estimasi denda pembatalan jika waktu tunggu pickup melampaui batas toleransi pelanggan.
+- **Kalkulasi Akurat untuk Order Batal:** Jika perkiraan waktu pickup melewati batas toleransi pelanggan (`eta.pickup > created_tick + patience`), pesanan dipastikan batal sebelum sempat diambil kurir. Maka imbalan *payout* bernilai 0 dan sistem hanya menanggung denda pembatalan (`0 - cancelPenalty`). Hal ini mencegah planner bersikap terlalu optimis.
+- **Kebijakan Order ASSIGNED:** Order yang sudah berstatus `ASSIGNED` ke kurir tertentu tidak dipindahkan ke kurir lain. Mengapa? Karena API kota secara tegas melempar HTTP 409 `order_taken` jika kurir B mencoba mengambil order yang masih ditugaskan ke kurir A. Memindahkan pesanan membutuhkan transaksi multi-tahap (lepas dari kurir A $\rightarrow$ tunggu state kembali `OPEN` $\rightarrow$ assign ke kurir B). Di tengah batas laju request 15 req/s dan durasi tick 300ms yang cepat, transaksi multi-tahap ini sangat rentan kegagalan *race condition*. Oleh karena itu, kurir yang telah di-assign tetap mengoptimalkan urutan stop-nya sendiri, dan penugasan ulang lintas kurir hanya terjadi saat kurir mengalami gangguan offline.
 - **Keunggulan:** Secara alami membentuk **batching rute searah**. Jika kurir sedang mengantar pesanan ke arah timur dan ada pesanan baru yang restoran serta dropoff-nya berada di sepanjang koridor tersebut, algoritma akan menyisipkannya di tengah perjalanan kurir tanpa membuang banyak waktu tambahan.
 
 ### Hasil Uji Benchmark Empiris (5 Seeds, 600 Ticks)
@@ -138,23 +140,23 @@ Berikut adalah hasil pengujian langsung menggunakan `npm run bench` (`scripts/be
 
 | Seed | Strategi | Delivered | Cancelled | Revenue (IDR) | Penalties (IDR) | Total Laba (IDR) |
 |:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| 1 | greedy | 81 | 82 | Rp 1.145.075 | Rp 835.750 | Rp 309.325 |
-| 2 | greedy | 79 | 85 | Rp 948.375 | Rp 834.250 | Rp 114.125 |
-| 3 | greedy | 70 | 99 | Rp 701.425 | Rp 997.750 | -Rp 296.325 |
-| 4 | greedy | 78 | 83 | Rp 1.106.525 | Rp 837.250 | Rp 269.275 |
-| 5 | greedy | 89 | 68 | Rp 1.164.675 | Rp 660.000 | Rp 504.675 |
-| **Rata-rata** | **greedy** | **79.4** | **83.4** | **Rp 1.013.215** | **Rp 833.000** | **Rp 180.215** |
-| 1 | insertion | 125 | 32 | Rp 1.553.425 | Rp 302.000 | Rp 1.251.425 |
-| 2 | insertion | 109 | 43 | Rp 1.232.050 | Rp 416.500 | Rp 815.550 |
-| 3 | insertion | 94 | 65 | Rp 1.015.000 | Rp 605.250 | Rp 409.750 |
-| 4 | insertion | 119 | 33 | Rp 1.538.100 | Rp 344.500 | Rp 1.193.600 |
-| 5 | insertion | 138 | 12 | Rp 1.788.950 | Rp 95.000 | Rp 1.693.950 |
-| **Rata-rata** | **insertion** | **117.0** | **37.0** | **Rp 1.425.505** | **Rp 352.650** | **Rp 1.072.855** |
+| 1 | greedy | 85 | 79 | Rp 1.233.400 | Rp 800.000 | Rp 433.400 |
+| 2 | greedy | 74 | 88 | Rp 808.500 | Rp 858.000 | -Rp 49.500 |
+| 3 | greedy | 70 | 100 | Rp 861.525 | Rp 968.500 | -Rp 106.975 |
+| 4 | greedy | 80 | 84 | Rp 1.073.250 | Rp 865.750 | Rp 207.500 |
+| 5 | greedy | 88 | 68 | Rp 1.212.975 | Rp 661.000 | Rp 551.975 |
+| **Rata-rata** | **greedy** | **79.4** | **83.8** | **Rp 1.037.930** | **Rp 830.650** | **Rp 207.280** |
+| 1 | insertion | 135 | 22 | Rp 1.860.175 | Rp 207.500 | Rp 1.652.675 |
+| 2 | insertion | 123 | 38 | Rp 1.244.900 | Rp 384.500 | Rp 860.400 |
+| 3 | insertion | 100 | 55 | Rp 1.070.925 | Rp 501.750 | Rp 569.175 |
+| 4 | insertion | 121 | 32 | Rp 1.532.425 | Rp 329.250 | Rp 1.203.175 |
+| 5 | insertion | 137 | 12 | Rp 1.926.450 | Rp 118.250 | Rp 1.808.200 |
+| **Rata-rata** | **insertion** | **123.2** | **31.8** | **Rp 1.526.975** | **Rp 308.250** | **Rp 1.218.725** |
 
 ### Analisis Hasil:
-- **Peningkatan Laba Bersih:** Strategi **Insertion menghasilkan laba rata-rata Rp 1.072.855**, yaitu **+495.3% (hampir 6x lipat)** dibandingkan strategi Greedy (Rp 180.215).
-- **Efisiensi Pengantaran:** Insertion sukses mengantar **117 pesanan (+47.4%)**, sementara Greedy hanya mengantar 79.4 pesanan.
-- **Pencegahan Denda Pembatalan:** Insertion memangkas jumlah pembatalan pesanan dari 83.4 menjadi 37 pesanan (**penurunan drastis -55.6%**), menghemat denda penalti sebesar Rp 480.350 per run.
+- **Peningkatan Laba Bersih:** Strategi **Insertion menghasilkan laba rata-rata Rp 1.218.725**, yaitu **+488.0% (hampir 6x lipat)** dibandingkan strategi Greedy (Rp 207.280).
+- **Efisiensi Pengantaran:** Insertion sukses mengantar rata-rata **123.2 pesanan (+55.2%)**, sementara Greedy hanya mengantar 79.4 pesanan.
+- **Pencegahan Denda Pembatalan:** Insertion memangkas jumlah pembatalan pesanan dari 83.8 menjadi 31.8 pesanan (**penurunan drastis -62.1%**), menghemat denda penalti sebesar Rp 522.400 per run.
 
 ---
 
@@ -200,7 +202,7 @@ Berikut adalah hasil pengujian langsung menggunakan `npm run bench` (`scripts/be
 
 ## 11. Status Pengujian: Apa yang Sudah & Belum Dites
 
-### Sudah Dites Secara Komprehensif:
+### Sudah Dites Secara Komprehensif (30 Test Cases Lolos):
 - **Unit Test Engine Simulasi (`test/world.test.ts` - 10 Test):**
   - Pergerakan sel ortogonal horizontal dulu baru vertikal.
   - Perilaku kurir menunggu masakan matang (`waiting`) dan pembayaran imbalan tepat waktu.
@@ -217,6 +219,18 @@ Berikut adalah hasil pengujian langsung menggunakan `npm run bench` (`scripts/be
   - Jaminan tidak pernah melanggar batas kapasitas muatan dan 12 stop pada 30 pesanan acak.
   - Kepatuhan terhadap daftar blokir sementara (`blocked` set).
   - Algoritma Greedy memilih kurir terdekat.
+- **Unit Test Ketahanan Kegagalan (`test/failures.test.ts` - 6 Test):**
+  - Penanganan rate limit HTTP 429 berdasar header `Retry-After` dengan retry otomatis pada client.
+  - Penanganan server error HTTP 5xx dengan exponential backoff bertahap.
+  - Toleransi non-fatal error HTTP 4xx pada `putRoute()` tanpa melempar exception crash.
+  - Penanganan tipe event tak dikenal (seperti `courier.route_updated`) yang diabaikan dan dicatat log-nya tepat 1 kali.
+  - Deteksi kurir offline, pembersihan seketika blokir rute kurir terkait, dan pemulihan saat kurir online kembali.
+  - Preservasi data pesanan selesai/batal secara utuh (restoran, koordinat, reward asli) tanpa *fallback unknown*.
+- **Unit Test Dashboard & Hydration (`test/dashboard.test.ts` - 4 Test):**
+  - Endpoint `GET /api/snapshot` menyajikan data operasional lengkap.
+  - Stream Server-Sent Events `GET /api/stream` mengirimkan header `text/event-stream`, direktif `retry: 2000`, dan snapshot pertama.
+  - Endpoint `POST /api/practice` memicu inisialisasi practice run baru.
+  - Mekanisme persistensi `Store.save()` dan `Store.load()` memulihkan kursor event dan log riwayat saat restart (`START_PRACTICE=false`).
 - **Integrasi End-to-End (`test/e2e.test.ts` - 2 Test):**
   - Eksekusi headless penuh 300 tick antara simulator HTTP nyata dan dispatcher mandiri.
   - Respon kegagalan otentikasi seketika saat API_KEY salah tanpa proses menggantung (*no hanging*).

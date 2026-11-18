@@ -338,4 +338,30 @@ describe("Planner Algorithms (Greedy & Insertion)", () => {
     expect(etas.get("o1")?.pickup).toBe(2);
     expect(etas.get("o1")?.dropoff).toBe(4);
   });
+
+  it("9. Nilai rute order yang pasti batal hanya menghitung denda, tanpa reward", () => {
+    const courier = makeCourier({ x: 0, y: 0 });
+    const doomedOrder = makeOrder({
+      id: "o_late_pickup",
+      restaurant: { id: "r1", x: 1, y: 0 },
+      dropoff: { x: 2, y: 0 },
+      created_tick: 0,
+      estimated_ready_tick: 100,
+      reward: 10000,
+    });
+    const result = simulateRoute(
+      courier,
+      [
+        { order_id: doomedOrder.id, action: "pickup" },
+        { order_id: doomedOrder.id, action: "dropoff" },
+      ],
+      new Map([[doomedOrder.id, doomedOrder]]),
+      0,
+      DISPATCH_CONFIG
+    );
+
+    expect(result.feasible).toBe(true);
+    expect(result.etas.get(doomedOrder.id)?.pickup).toBe(100);
+    expect(result.value).toBe(-5000);
+  });
 });

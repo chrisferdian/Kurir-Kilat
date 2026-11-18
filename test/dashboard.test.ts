@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { SimClient } from "../src/dispatcher/client";
 import { startDashboard } from "../src/dispatcher/main";
 import { Store } from "../src/dispatcher/store";
-import type { DashboardSnapshot, MapResponse } from "../src/shared/types";
+import type { DashboardSnapshot, MapResponse, Order, StateResponse } from "../src/shared/types";
 
 describe("Dashboard & Hydration", () => {
   let server: http.Server;
@@ -51,6 +51,7 @@ describe("Dashboard & Hydration", () => {
       PORT: 0,
       SEED: undefined,
       START_PRACTICE: true,
+      ALLOW_PRACTICE: true,
       STRATEGY: "insertion",
       HEADLESS: false,
     });
@@ -132,6 +133,19 @@ describe("Dashboard & Hydration", () => {
     hydStore.eventCursor = 42;
     hydStore.log("assign", "o1 -> c1", "o1", "c1");
     hydStore.addScore({ delivered: 5, cancelled: 1, revenue: 50000, penalties: 5000, total: 45000 }, 50);
+    const order: Order = {
+      id: "o_restart",
+      restaurant: { id: "r_restart", x: 7, y: 9 },
+      dropoff: { x: 21, y: 23 },
+      created_tick: 12,
+      estimated_ready_tick: 18,
+      deadline_tick: 48,
+      reward: 17500,
+      premium: true,
+      status: "ASSIGNED",
+      courier_id: "c1",
+    };
+    hydStore.allKnownOrders.set(order.id, order);
 
     // Simpan snapshot ke direktori tes
     hydStore.save(testDataDir);
@@ -147,5 +161,29 @@ describe("Dashboard & Hydration", () => {
     expect(loaded?.decisions[0].message).toBe("o1 -> c1");
     expect(loaded?.scoreHistory.length).toBe(1);
     expect(loaded?.scoreHistory[0].total).toBe(45000);
+    expect(loaded?.allKnownOrders).toEqual([order]);
+
+    // Simulasikan restart ketika order sudah selesai dan hilang dari state.
+    const restarted = new Store("insertion");
+    restarted.reset("run_hydrate_test");
+    restarted.hydrate(loaded!);
+    restarted.log("event", "proses setelah restart");
+    expect(restarted.decisions.at(-1)?.id).toBe(2);
+    expect(restarted.score?.total).toBe(45000);
+    const emptyState: StateResponse = {
+      run: { id: "run_hydrate_test", tick: 51, ticks: 100, tick_ms: 300, mode: "practice", status: "running" },
+      couriers: [],
+      orders: [],
+    };
+    restarted.applyState(emptyState);
+    restarted.applyEvents([
+      { seq: 43, tick: 51, type: "order.delivered", data: { order_id: "o_restart", courier_id: "c1", payout: 17500, late_ticks: 3 } },
+    ]);
+    const completed = restarted.finishedOrders.get("o_restart");
+    expect(completed?.restaurant).toEqual(order.restaurant);
+    expect(completed?.dropoff).toEqual(order.dropoff);
+    expect(completed?.deadline_tick).toBe(48);
+    expect(completed?.reward).toBe(17500);
+    expect(completed?.metadata_missing).toBe(false);
   });
 });

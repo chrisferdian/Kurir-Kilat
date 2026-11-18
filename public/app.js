@@ -313,7 +313,7 @@
 
       for (const stop of courier.route) {
         const order = ordersById.get(stop.order_id);
-        if (!order) continue;
+        if (!order || !order.restaurant || !order.dropoff) continue;
 
         const target = stop.action === "pickup" ? order.restaurant : order.dropoff;
         const targetX = target.x * CELL_SIZE + CELL_SIZE / 2;
@@ -349,6 +349,7 @@
     // A. Render Dropoff Order Aktif
     for (const order of orders) {
       if (order.final_status) continue; // Selesai tidak digambar
+      if (!order.dropoff) continue;
       const id = `drop_${order.id}`;
       activeIds.add(id);
 
@@ -486,7 +487,8 @@
       const rA = riskWeight[a.risk] || 0;
       const rB = riskWeight[b.risk] || 0;
       if (rA !== rB) return rB - rA;
-      return a.deadline_tick - b.deadline_tick;
+      return (a.deadline_tick ?? Number.POSITIVE_INFINITY) -
+        (b.deadline_tick ?? Number.POSITIVE_INFINITY);
     });
 
     let finishedRenderCount = 0;
@@ -508,39 +510,72 @@
 
       const status = o.final_status || o.status;
       const courier = o.courier_id || "-";
-      const routeStr = `${o.restaurant.id} (${o.restaurant.x},${o.restaurant.y}) → (${o.dropoff.x},${o.dropoff.y})`;
-      const rewardStr = rupiahFormatter.format(o.payout !== null ? o.payout : o.reward);
+      const routeStr = o.restaurant && o.dropoff
+        ? `${o.restaurant.id} (${o.restaurant.x},${o.restaurant.y}) → (${o.dropoff.x},${o.dropoff.y})`
+        : "Lokasi tidak tersedia";
+      const shownAmount = o.payout !== null ? o.payout : o.reward;
+      const rewardStr = shownAmount === null ? "-" : rupiahFormatter.format(shownAmount);
 
       let timeLeftStr = "-";
       let timeLeftClass = "";
       if (!o.final_status) {
-        const remaining = o.deadline_tick - currentTick;
-        timeLeftStr = `${remaining} tick`;
-        if (remaining < 0) {
-          timeLeftClass = "text-danger";
-          timeLeftStr = `Telat ${Math.abs(remaining)} tick`;
+        const remaining = o.deadline_tick === null ? null : o.deadline_tick - currentTick;
+        if (remaining === null) {
+          timeLeftStr = "-";
+        } else {
+          timeLeftStr = `${remaining} tick`;
+          if (remaining < 0) {
+            timeLeftClass = "text-danger";
+            timeLeftStr = `Telat ${Math.abs(remaining)} tick`;
+          }
         }
       }
 
       const etaStr = o.eta_dropoff !== null ? `t=${o.eta_dropoff}` : "-";
 
-      let riskHtml = `<span class="risk-tag risk-ok">OK</span>`;
-      if (o.risk === "cancel") {
-        riskHtml = `<span class="risk-tag risk-cancel">RAWAN BATAL</span>`;
-      } else if (o.risk === "late") {
-        riskHtml = `<span class="risk-tag risk-late">TELAT</span>`;
+      // Build cells with textContent: order/API fields must never become HTML.
+      tr.replaceChildren();
+      const addCell = (content, className = "") => {
+        const td = document.createElement("td");
+        if (className) td.className = className;
+        if (content instanceof Node) td.appendChild(content);
+        else td.textContent = content;
+        tr.appendChild(td);
+        return td;
+      };
+
+      const orderCell = document.createElement("strong");
+      orderCell.textContent = o.id;
+      addCell(orderCell);
+      if (o.premium) {
+        const premium = document.createElement("span");
+        premium.textContent = " ★";
+        premium.style.color = "#facc15";
+        tr.cells[0].appendChild(premium);
       }
 
-      tr.innerHTML = `
-        <td><strong>${o.id}</strong> ${o.premium ? '<span style="color:#facc15">★</span>' : ""}</td>
-        <td><span class="badge-status status-${status}">${status}</span></td>
-        <td><strong>${courier}</strong></td>
-        <td>${routeStr}</td>
-        <td>${rewardStr}</td>
-        <td class="${timeLeftClass}">${timeLeftStr}</td>
-        <td>${etaStr}</td>
-        <td>${riskHtml}</td>
-      `;
+      const statusBadge = document.createElement("span");
+      const safeStatus = ["OPEN", "ASSIGNED", "PICKED_UP", "DELIVERED", "CANCELLED"].includes(status)
+        ? status
+        : "UNKNOWN";
+      statusBadge.className = `badge-status status-${safeStatus}`;
+      statusBadge.textContent = status;
+      addCell(statusBadge);
+
+      const courierCell = document.createElement("strong");
+      courierCell.textContent = courier;
+      addCell(courierCell);
+      addCell(routeStr);
+      addCell(rewardStr);
+      addCell(timeLeftStr, timeLeftClass);
+      addCell(etaStr);
+
+      const riskLabels = { ok: "OK", late: "TELAT", cancel: "RAWAN BATAL" };
+      const safeRisk = Object.hasOwn(riskLabels, o.risk) ? o.risk : "ok";
+      const riskBadge = document.createElement("span");
+      riskBadge.className = `risk-tag risk-${safeRisk}`;
+      riskBadge.textContent = riskLabels[safeRisk];
+      addCell(riskBadge);
     }
 
     // Bersihkan baris yang sudah tidak ada di tampilan

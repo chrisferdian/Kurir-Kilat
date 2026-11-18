@@ -73,12 +73,7 @@ export async function runDispatcher(opts: {
       store.runId = state.run.id;
       const loaded = Store.load("data", state.run.id);
       if (loaded) {
-        store.eventCursor = loaded.eventCursor;
-        store.decisions = loaded.decisions;
-        store.scoreHistory = loaded.scoreHistory;
-        for (const fo of loaded.finishedOrders) {
-          store.finishedOrders.set(fo.id, fo);
-        }
+        store.hydrate(loaded);
         store.log(
           "info",
           `Melanjutkan run ${state.run.id} dari snapshot data/ (cursor event: ${store.eventCursor})`
@@ -105,15 +100,25 @@ export async function runDispatcher(opts: {
       }
 
       // Hindari memproses tick yang sama lebih dari sekali KECUALI jika run sudah selesai
-      if (state.run.tick === lastProcessedTick && state.run.status !== "finished") {
-        await sleep(Math.max(10, Math.floor(state.run.tick_ms / 2)));
+      if (state.run.tick === lastProcessedTick) {
+        // A finished run remains the current state until the city starts another one.
+        // Avoid re-logging/re-saving its final score on every poll.
+        if (state.run.status === "finished") {
+          await sleep(1000);
+          continue;
+        }
+        await sleep(Math.max(10, Math.min(100, Math.floor(state.run.tick_ms / 3))));
         continue;
       }
 
       lastProcessedTick = state.run.tick;
 
-      // 1. Kuras semua event baru dari stream terlebih dahulu
-      // agar pesanan yang selesai/batal di tick ini langsung terdeteksi lengkap sebelum state diperbarui
+      // Merge state first so its current order details are available when events
+      // complete orders. Then drain events; terminal events remove orders from
+      // activeOrders even if this state response was captured just before delivery.
+      store.applyState(state);
+
+      // 1. Kuras semua event baru dari stream
       let hasMore = true;
       while (hasMore) {
         const eventsRes = await client.getEvents(store.eventCursor, 200);
@@ -123,9 +128,6 @@ export async function runDispatcher(opts: {
         }
         hasMore = eventsRes.has_more;
       }
-
-      // 2. Perbarui state ground truth kurir & pesanan aktif
-      store.applyState(state);
 
       // Periksa apakah run sudah selesai
       if (state.run.status === "finished") {
@@ -215,8 +217,9 @@ export async function runDispatcher(opts: {
       // Siarkan pembaruan snapshot ke dashboard web via SSE
       store.notify();
 
-      // Tidur hingga tick berikutnya
-      await sleep(Math.max(10, state.run.tick_ms));
+      // Poll again immediately. The duplicate-tick guard above provides a short
+      // wait when the city has not advanced, without adding a full tick of lag
+      // after potentially slow state/event/route requests.
     } catch (err: any) {
       store.simOnline = false;
       store.log("error", `Terjadi kesalahan loop: ${err.message || err}`);
@@ -234,7 +237,7 @@ export function startDashboard(
   store: Store,
   port: number,
   client: SimClient,
-  _env: typeof ENV
+  env: typeof ENV
 ): Server {
   const app = express();
   const publicDir = path.resolve(process.cwd(), "public");
@@ -289,6 +292,13 @@ export function startDashboard(
 
   // Trigger practice run baru dari UI
   app.post("/api/practice", async (req: Request, res: Response): Promise<void> => {
+    if (!env.ALLOW_PRACTICE) {
+      res.status(403).json({
+        ok: false,
+        error: "Memulai run baru dinonaktifkan untuk target ini. Set ALLOW_PRACTICE=true untuk mengizinkan.",
+      });
+      return;
+    }
     try {
       const seed =
         typeof req.body?.seed === "number" ? req.body.seed : undefined;

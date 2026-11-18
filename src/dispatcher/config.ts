@@ -6,11 +6,23 @@ export const ENV = {
   API_KEY: process.env.API_KEY || "dev-key",
   PORT: parseInt(process.env.PORT || "3000", 10),
   SEED: process.env.SEED ? parseInt(process.env.SEED, 10) : undefined,
-  START_PRACTICE: process.env.START_PRACTICE !== "false",
+  // Joining an existing run is the safe default. Starting practice replaces the active run.
+  START_PRACTICE: process.env.START_PRACTICE === "true",
+  ALLOW_PRACTICE: process.env.ALLOW_PRACTICE === "true" ||
+    isLoopbackUrl(process.env.SIM_URL || "http://localhost:4000"),
   STRATEGY: ((process.env.STRATEGY as "greedy" | "insertion") ||
     "insertion") as "greedy" | "insertion",
   HEADLESS: process.env.HEADLESS === "true",
 };
+
+function isLoopbackUrl(value: string): boolean {
+  try {
+    const hostname = new URL(value).hostname;
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+  } catch {
+    return false;
+  }
+}
 
 export interface DispatchConfig {
   ASSUMED_PATIENCE_TICKS: number;

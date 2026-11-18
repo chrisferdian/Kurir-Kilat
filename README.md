@@ -11,9 +11,9 @@ Tersedia script praktis yang otomatis mendeteksi apakah dependensi sudah terpasa
 ```bash
 ./run.sh
 ```
-Untuk menghentikan semua proses di port 3000 dan 4000:
+Untuk menghentikan proses yang dijalankan dari terminal tersebut:
 ```bash
-./stop.sh
+Ctrl+C
 ```
 
 ## Menjalankan Manual
@@ -24,10 +24,12 @@ npm start
 Buka browser di: http://localhost:3000
 
 ## Menjalankan ke API Kota Asli (Produksi)
-Untuk menghubungkan dispatcher ke API kota asli, arahkan `SIM_URL` dan `API_KEY` tanpa perlu mengubah kode sumber:
+Untuk menghubungkan dispatcher ke API kota asli, arahkan `SIM_URL` dan `API_KEY` tanpa perlu mengubah kode sumber. Default-nya dispatcher bergabung ke run aktif. Memulai run baru bersifat opt-in karena endpoint `/v1/practice` mengganti run yang sedang berjalan:
 ```bash
-SIM_URL=https://api.kotatujuan.com API_KEY=secret-token-asli START_PRACTICE=true npm run dispatcher
+SIM_URL=https://api.kotatujuan.com API_KEY=secret-token-asli START_PRACTICE=false npm run dispatcher
 ```
+Gunakan `START_PRACTICE=true` hanya saat memang ingin mengganti run aktif dengan run latihan baru.
+Tombol **Practice Run Baru** di dashboard juga dibatasi untuk URL loopback secara default; untuk target lain perlu opt-in dengan `ALLOW_PRACTICE=true`.
 
 ## Variabel Lingkungan (Environment Variables)
 
@@ -38,7 +40,8 @@ SIM_URL=https://api.kotatujuan.com API_KEY=secret-token-asli START_PRACTICE=true
 | API_KEY | Token otentikasi Bearer API kota | dev-key |
 | PORT | Port server dashboard operasional | 3000 |
 | SEED | Seed acak untuk inisialisasi practice run | (acak) |
-| START_PRACTICE | Mulai practice run baru saat inisialisasi (true/false) | true |
+| START_PRACTICE | Mulai practice run baru saat inisialisasi; jika false, ikuti run aktif | false |
+| ALLOW_PRACTICE | Izinkan tombol dashboard memanggil `/v1/practice` | URL loopback saja |
 | STRATEGY | Algoritma penugasan rute (`insertion` atau `greedy`) | insertion |
 | HEADLESS | Mode tanpa dashboard, cetak skor akhir JSON lalu exit | false |
 
@@ -87,7 +90,6 @@ test/dashboard.test.ts     Unit test dashboard SSE stream, snapshot, practice, d
 test/e2e.test.ts           Pengujian integrasi end-to-end simulator dan dispatcher headless.
 scripts/bench.ts           Script benchmark perbandingan strategi Greedy vs Insertion di 5 seed.
 run.sh                     Script otomatisasi install dependensi & start aplikasi.
-stop.sh                    Script untuk menghentikan semua proses di port 3000 & 4000.
 NOTES.md                   Dokumentasi keputusan arsitektur, trade-off, dan catatan interview.
 ```
 

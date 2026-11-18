@@ -16,18 +16,10 @@ else
   echo "✓ Dependensi (node_modules) sudah siap."
 fi
 
-# 2. Bersihkan port 3000 & 4000 jika ada proses lama yang menggantung
-PIDS=$(lsof -ti :3000 -ti :4000 2>/dev/null || true)
-if [ -n "$PIDS" ]; then
-  echo "🧹 Membersihkan proses lama di port 3000/4000 (PID: $PIDS)..."
-  echo "$PIDS" | xargs kill -9 2>/dev/null || true
-  sleep 1
-fi
-
-# 3. Jalankan simulator kota + dispatcher + dashboard
+# 2. Jalankan simulator kota + dispatcher + dashboard
 echo "🚀 Menjalankan Simulator Kota & Dispatcher..."
 echo "🌐 Dashboard akan tersedia di: http://localhost:3000"
-echo "Tekan Ctrl+C atau jalankan './stop.sh' untuk menghentikan."
+echo "Tekan Ctrl+C untuk menghentikan proses yang dimulai oleh perintah ini."
 echo "=========================================="
 
 npm start

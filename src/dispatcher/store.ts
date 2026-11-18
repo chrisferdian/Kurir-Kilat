@@ -21,6 +21,14 @@ import type {
 } from "../shared/types";
 import type { DispatchConfig } from "./config";
 
+export interface StoreSnapshot {
+  eventCursor: number;
+  decisions: DecisionLog[];
+  scoreHistory: ScorePoint[];
+  finishedOrders: OrderView[];
+  allKnownOrders: Order[];
+}
+
 export class Store {
   public runId: string | null = null;
   public map: MapResponse | null = null;
@@ -132,6 +140,8 @@ export class Store {
   public applyEvents(events: SimEvent[]): { needMapRefresh: boolean } {
     let needMapRefresh = false;
 
+    // courier.route_updated is emitted by the simulator but is intentionally
+    // not part of the documented event contract, so it exercises unknown-event handling.
     const knownTypes = new Set([
       "run.started",
       "order.created",
@@ -158,7 +168,8 @@ export class Store {
           order.courier_id = ev.data.courier_id;
         }
       } else if (ev.type === "order.delivered") {
-        const { order_id, courier_id, payout, late_ticks } = ev.data;
+        const { order_id, courier_id, payout, late_ticks } = ev.data || {};
+        if (!order_id) continue;
         const existing = this.activeOrders.get(order_id) || this.allKnownOrders.get(order_id);
         const orderView: OrderView = existing
           ? {
@@ -167,17 +178,18 @@ export class Store {
               payout,
               eta_pickup: null,
               eta_dropoff: ev.tick,
-              risk: late_ticks > 0 ? "late" : "ok",
+              risk: (late_ticks || 0) > 0 ? "late" : "ok",
               courier_id: courier_id || existing.courier_id,
+              metadata_missing: false,
             }
           : {
               id: order_id,
-              restaurant: { id: "unknown", x: 0, y: 0 },
-              dropoff: { x: 0, y: 0 },
-              created_tick: ev.tick,
-              estimated_ready_tick: ev.tick,
-              deadline_tick: ev.tick,
-              reward: payout,
+              restaurant: null,
+              dropoff: null,
+              created_tick: null,
+              estimated_ready_tick: null,
+              deadline_tick: null,
+              reward: null,
               premium: false,
               status: "PICKED_UP",
               courier_id,
@@ -185,7 +197,8 @@ export class Store {
               payout,
               eta_pickup: null,
               eta_dropoff: ev.tick,
-              risk: late_ticks > 0 ? "late" : "ok",
+              risk: (late_ticks || 0) > 0 ? "late" : "ok",
+              metadata_missing: true,
             };
 
         this.finishedOrders.set(order_id, orderView);
@@ -195,33 +208,36 @@ export class Store {
           if (firstKey) this.finishedOrders.delete(firstKey);
         }
       } else if (ev.type === "order.cancelled") {
-        const { order_id, penalty } = ev.data;
+        const { order_id, penalty } = ev.data || {};
+        if (!order_id) continue;
         const existing = this.activeOrders.get(order_id) || this.allKnownOrders.get(order_id);
         const orderView: OrderView = existing
           ? {
               ...existing,
               final_status: "CANCELLED",
-              payout: -penalty,
+              payout: -(penalty || 0),
               eta_pickup: null,
               eta_dropoff: null,
               risk: "cancel",
+              metadata_missing: false,
             }
           : {
               id: order_id,
-              restaurant: { id: "unknown", x: 0, y: 0 },
-              dropoff: { x: 0, y: 0 },
-              created_tick: ev.tick,
-              estimated_ready_tick: ev.tick,
-              deadline_tick: ev.tick,
-              reward: penalty * 2,
+              restaurant: null,
+              dropoff: null,
+              created_tick: null,
+              estimated_ready_tick: null,
+              deadline_tick: null,
+              reward: null,
               premium: false,
               status: "OPEN",
               courier_id: null,
               final_status: "CANCELLED",
-              payout: -penalty,
+              payout: -(penalty || 0),
               eta_pickup: null,
               eta_dropoff: null,
               risk: "cancel",
+              metadata_missing: true,
             };
 
         this.finishedOrders.set(order_id, orderView);
@@ -233,19 +249,24 @@ export class Store {
 
         this.log(
           "event",
-          `${order_id} dibatalkan pelanggan (denda Rp ${penalty.toLocaleString("id-ID")})`,
-          order_id
+          `${order_id} dibatalkan pelanggan (denda Rp ${(penalty || 0).toLocaleString("id-ID")})`,
+          order_id,
+          undefined,
+          ev.tick
         );
       } else if (ev.type === "zone.weather_changed") {
         needMapRefresh = true;
         this.log(
           "event",
-          `Cuaca zona ${ev.data.zone} berganti jadi ${ev.data.weather}`
+          `Cuaca zona ${ev.data.zone} berganti jadi ${ev.data.weather}`,
+          undefined,
+          undefined,
+          ev.tick
         );
       } else if (!knownTypes.has(ev.type)) {
         if (!this.unknownEventTypesSeen.has(ev.type)) {
           this.unknownEventTypesSeen.add(ev.type);
-          this.log("event", `event tidak dikenal: ${ev.type} (diabaikan)`);
+          this.log("event", `event tidak dikenal: ${ev.type} (diabaikan)`, undefined, undefined, ev.tick);
         }
       }
     }
@@ -257,9 +278,10 @@ export class Store {
     kind: DecisionKind,
     message: string,
     order_id?: string,
-    courier_id?: string
+    courier_id?: string,
+    tickOverride?: number
   ): void {
-    const tick = this.run ? this.run.tick : 0;
+    const tick = tickOverride ?? (this.run ? this.run.tick : 0);
 
     // Dedupe log pesan skip untuk order yang sama jika belum > 20 tick
     if (kind === "skip" && order_id) {
@@ -310,6 +332,48 @@ export class Store {
     // Batasi riwayat skor agar tidak membebani memori
     if (this.scoreHistory.length > 600) {
       this.scoreHistory.shift();
+    }
+  }
+
+  public hydrate(snapshot: StoreSnapshot): void {
+    this.eventCursor = snapshot.eventCursor;
+    this.decisions = snapshot.decisions;
+    this.scoreHistory = snapshot.scoreHistory;
+    this.finishedOrders = new Map(
+      snapshot.finishedOrders.map((order) => [order.id, order])
+    );
+    this.allKnownOrders = new Map(snapshot.allKnownOrders.map((order) => [order.id, order]));
+    this.decisionSeq = snapshot.decisions.reduce((max, item) => Math.max(max, item.id), 0);
+    const lastScore = snapshot.scoreHistory.at(-1);
+    if (lastScore) {
+      const { tick: _tick, ...score } = lastScore;
+      this.score = score;
+    }
+
+    // Older snapshots did not persist allKnownOrders. Recover complete metadata
+    // from the retained finished-order history when possible.
+    for (const finished of snapshot.finishedOrders) {
+      if (
+        finished.metadata_missing ||
+        !finished.restaurant ||
+        !finished.dropoff ||
+        finished.reward === null ||
+        finished.created_tick === null ||
+        finished.estimated_ready_tick === null ||
+        finished.deadline_tick === null
+      ) {
+        continue;
+      }
+      const {
+        final_status: _finalStatus,
+        payout: _payout,
+        eta_pickup: _etaPickup,
+        eta_dropoff: _etaDropoff,
+        risk: _risk,
+        metadata_missing: _metadataMissing,
+        ...order
+      } = finished;
+      this.allKnownOrders.set(order.id, order as Order);
     }
   }
 
@@ -390,6 +454,7 @@ export class Store {
         decisions: this.decisions,
         scoreHistory: this.scoreHistory,
         finishedOrders: Array.from(this.finishedOrders.values()),
+        allKnownOrders: Array.from(this.allKnownOrders.values()),
       };
       fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf-8");
     } catch (err) {
@@ -400,12 +465,7 @@ export class Store {
   public static load(
     dataDir: string,
     runId: string
-  ): {
-    eventCursor: number;
-    decisions: DecisionLog[];
-    scoreHistory: ScorePoint[];
-    finishedOrders: OrderView[];
-  } | null {
+  ): StoreSnapshot | null {
     try {
       const filePath = path.join(dataDir, `snapshot-${runId}.json`);
       if (!fs.existsSync(filePath)) return null;
@@ -417,6 +477,7 @@ export class Store {
         decisions: data.decisions || [],
         scoreHistory: data.scoreHistory || [],
         finishedOrders: data.finishedOrders || [],
+        allKnownOrders: data.allKnownOrders || [],
       };
     } catch (err) {
       console.warn(`[Store] Gagal membaca snapshot ${runId}:`, err);

@@ -8,8 +8,7 @@
     "start": "concurrently -k -n sim,disp -c yellow,cyan \"npm:sim\" \"npm:dispatcher\"",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "bench": "tsx scripts/bench.ts",
-    "stop": "./stop.sh"
+    "bench": "tsx scripts/bench.ts"
   },
   "dependencies": {
     "express": "^4.21.2"

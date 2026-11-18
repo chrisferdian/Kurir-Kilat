@@ -102,6 +102,8 @@ Dispatcher menerapkan **pendekatan hibrida terkoordinasi**:
 
 ## 7. State Memori & Penanganan Restart di Tengah Run
 
+Dispatcher bergabung ke run aktif secara default (`START_PRACTICE=false`). Ini menghindari pemanggilan `/v1/practice` yang akan mengganti run aktif. Untuk membuat run latihan baru secara sengaja, set `START_PRACTICE=true`. Tombol dashboard memanggil endpoint yang sama, sehingga hanya aktif otomatis untuk URL loopback dan memerlukan `ALLOW_PRACTICE=true` pada target lain.
+
 ### Apa yang Disimpan di Memori (`Store`)?
 - State aktif run saat ini (`runId`, `tick`, posisi kurir, status pesanan).
 - Ring buffer log keputusan dispatcher (maksimal 500 entri terakhir) dengan auto-deduplikasi pesan skip.
@@ -132,31 +134,31 @@ Dispatcher menerapkan **pendekatan hibrida terkoordinasi**:
   $$\Delta = \text{Value}_{\text{baru}} - \text{Value}_{\text{lama}} - (\text{TIME\_COST\_PER\_TICK} \times \Delta_{\text{waktu}})$$
   di mana $\text{Value}$ mengkalkulasi imbalan penuh jika dropoff $\le$ deadline, depresiasi 5%/tick jika terlambat, dan estimasi denda pembatalan jika waktu tunggu pickup melampaui batas toleransi pelanggan.
 - **Kalkulasi Akurat untuk Order Batal:** Jika perkiraan waktu pickup melewati batas toleransi pelanggan (`eta.pickup > created_tick + patience`), pesanan dipastikan batal sebelum sempat diambil kurir. Maka imbalan *payout* bernilai 0 dan sistem hanya menanggung denda pembatalan (`0 - cancelPenalty`). Hal ini mencegah planner bersikap terlalu optimis.
-- **Kebijakan Order ASSIGNED:** Order yang sudah berstatus `ASSIGNED` ke kurir tertentu tidak dipindahkan ke kurir lain. Mengapa? Karena API kota secara tegas melempar HTTP 409 `order_taken` jika kurir B mencoba mengambil order yang masih ditugaskan ke kurir A. Memindahkan pesanan membutuhkan transaksi multi-tahap (lepas dari kurir A $\rightarrow$ tunggu state kembali `OPEN` $\rightarrow$ assign ke kurir B). Di tengah batas laju request 15 req/s dan durasi tick 300ms yang cepat, transaksi multi-tahap ini sangat rentan kegagalan *race condition*. Oleh karena itu, kurir yang telah di-assign tetap mengoptimalkan urutan stop-nya sendiri, dan penugasan ulang lintas kurir hanya terjadi saat kurir mengalami gangguan offline.
+- **Kebijakan Order ASSIGNED:** Order yang sudah berstatus `ASSIGNED` ke kurir tertentu tidak dipindahkan ke kurir lain. API kota menolak kurir lain dengan `order_taken`; reassignment perlu melepas rute lama, menunggu state mengembalikan order ke `OPEN`, lalu mengirim rute baru. Transaksi beberapa tahap ini rawan *race condition*. Order `ASSIGNED` hanya dioptimalkan pada rute kurir pemegangnya; **reassignment proaktif belum diimplementasikan**. Simulator lokal mengembalikan order assigned ke `OPEN` saat kurir offline, tetapi perilaku ini harus diverifikasi terhadap API kota asli.
 - **Keunggulan:** Secara alami membentuk **batching rute searah**. Jika kurir sedang mengantar pesanan ke arah timur dan ada pesanan baru yang restoran serta dropoff-nya berada di sepanjang koridor tersebut, algoritma akan menyisipkannya di tengah perjalanan kurir tanpa membuang banyak waktu tambahan.
 
 ### Hasil Uji Benchmark Empiris (5 Seeds, 600 Ticks)
-Berikut adalah hasil pengujian langsung menggunakan `npm run bench` (`scripts/bench.ts`):
+Terakhir dijalankan ulang pada 2026-11-18 menggunakan `npm run bench` (`scripts/bench.ts`). Angka dapat berubah jika model simulator atau planner berubah.
 
 | Seed | Strategi | Delivered | Cancelled | Revenue (IDR) | Penalties (IDR) | Total Laba (IDR) |
 |:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| 1 | greedy | 85 | 79 | Rp 1.233.400 | Rp 800.000 | Rp 433.400 |
-| 2 | greedy | 74 | 88 | Rp 808.500 | Rp 858.000 | -Rp 49.500 |
-| 3 | greedy | 70 | 100 | Rp 861.525 | Rp 968.500 | -Rp 106.975 |
-| 4 | greedy | 80 | 84 | Rp 1.073.250 | Rp 865.750 | Rp 207.500 |
-| 5 | greedy | 88 | 68 | Rp 1.212.975 | Rp 661.000 | Rp 551.975 |
-| **Rata-rata** | **greedy** | **79.4** | **83.8** | **Rp 1.037.930** | **Rp 830.650** | **Rp 207.280** |
-| 1 | insertion | 135 | 22 | Rp 1.860.175 | Rp 207.500 | Rp 1.652.675 |
-| 2 | insertion | 123 | 38 | Rp 1.244.900 | Rp 384.500 | Rp 860.400 |
-| 3 | insertion | 100 | 55 | Rp 1.070.925 | Rp 501.750 | Rp 569.175 |
-| 4 | insertion | 121 | 32 | Rp 1.532.425 | Rp 329.250 | Rp 1.203.175 |
-| 5 | insertion | 137 | 12 | Rp 1.926.450 | Rp 118.250 | Rp 1.808.200 |
-| **Rata-rata** | **insertion** | **123.2** | **31.8** | **Rp 1.526.975** | **Rp 308.250** | **Rp 1.218.725** |
+| 1 | greedy | 82 | 79 | Rp 1.263.900 | Rp 755.000 | Rp 508.900 |
+| 2 | greedy | 76 | 86 | Rp 882.700 | Rp 842.750 | Rp 39.950 |
+| 3 | greedy | 66 | 105 | Rp 772.100 | Rp 1.020.500 | -Rp 248.400 |
+| 4 | greedy | 83 | 79 | Rp 1.149.875 | Rp 834.750 | Rp 315.125 |
+| 5 | greedy | 81 | 77 | Rp 1.204.325 | Rp 703.500 | Rp 500.825 |
+| **Rata-rata** | **greedy** | **77.6** | **85.2** | **Rp 1.054.580** | **Rp 831.300** | **Rp 223.280** |
+| 1 | insertion | 130 | 20 | Rp 1.755.500 | Rp 179.750 | Rp 1.575.750 |
+| 2 | insertion | 122 | 35 | Rp 1.269.100 | Rp 325.500 | Rp 943.600 |
+| 3 | insertion | 103 | 55 | Rp 1.178.175 | Rp 505.750 | Rp 672.425 |
+| 4 | insertion | 117 | 35 | Rp 1.574.225 | Rp 347.500 | Rp 1.226.725 |
+| 5 | insertion | 134 | 14 | Rp 1.827.200 | Rp 99.500 | Rp 1.727.700 |
+| **Rata-rata** | **insertion** | **121.2** | **31.8** | **Rp 1.520.840** | **Rp 291.600** | **Rp 1.229.240** |
 
 ### Analisis Hasil:
-- **Peningkatan Laba Bersih:** Strategi **Insertion menghasilkan laba rata-rata Rp 1.218.725**, yaitu **+488.0% (hampir 6x lipat)** dibandingkan strategi Greedy (Rp 207.280).
-- **Efisiensi Pengantaran:** Insertion sukses mengantar rata-rata **123.2 pesanan (+55.2%)**, sementara Greedy hanya mengantar 79.4 pesanan.
-- **Pencegahan Denda Pembatalan:** Insertion memangkas jumlah pembatalan pesanan dari 83.8 menjadi 31.8 pesanan (**penurunan drastis -62.1%**), menghemat denda penalti sebesar Rp 522.400 per run.
+- **Peningkatan Laba Bersih:** Pada benchmark ini, Insertion menghasilkan laba rata-rata Rp 1.229.240, atau **+450.5%** dibandingkan Greedy (Rp 223.280).
+- **Efisiensi Pengantaran:** Insertion mengantar rata-rata 121.2 pesanan (+56.2%), sementara Greedy mengantar 77.6 pesanan.
+- **Pencegahan Denda Pembatalan:** Rata-rata pembatalan turun dari 85.2 menjadi 31.8 pesanan (-62.7%); denda turun Rp 539.700 per run.
 
 ---
 
@@ -202,7 +204,7 @@ Berikut adalah hasil pengujian langsung menggunakan `npm run bench` (`scripts/be
 
 ## 11. Status Pengujian: Apa yang Sudah & Belum Dites
 
-### Sudah Dites Secara Komprehensif (30 Test Cases Lolos):
+### Hasil Verifikasi Terakhir (2026-11-18): 33 Test Lolos
 - **Unit Test Engine Simulasi (`test/world.test.ts` - 10 Test):**
   - Pergerakan sel ortogonal horizontal dulu baru vertikal.
   - Perilaku kurir menunggu masakan matang (`waiting`) dan pembayaran imbalan tepat waktu.
@@ -212,25 +214,26 @@ Berikut adalah hasil pengujian langsung menggunakan `npm run bench` (`scripts/be
   - Pemulihan pesanan yang dibatalkan rutenya kembali ke status `OPEN`.
   - Paginasi kursor event feed dan mekanisme penghentian run pada batas tick.
   - Determinisme seed PRNG (seed yang sama menghasilkan state yang identik 100%).
-- **Unit Test Algoritma Perencanaan (`test/planner.test.ts` - 8 Test):**
+- **Unit Test Algoritma Perencanaan (`test/planner.test.ts` - 9 Test):**
   - Simulasi rute, kalkulasi ETA, deteksi rute tidak layak (*infeasible*).
   - Algoritma Insertion memilih kurir dengan penambahan waktu paling minimal.
   - Pembentukan *batching* alami pada pesanan yang berada di koridor searah.
   - Jaminan tidak pernah melanggar batas kapasitas muatan dan 12 stop pada 30 pesanan acak.
   - Kepatuhan terhadap daftar blokir sementara (`blocked` set).
   - Algoritma Greedy memilih kurir terdekat.
-- **Unit Test Ketahanan Kegagalan (`test/failures.test.ts` - 6 Test):**
+  - Penilaian order yang pasti batal mengecualikan reward dan hanya membebankan estimasi denda.
+- **Unit Test Ketahanan Kegagalan (`test/failures.test.ts` - 8 Test):**
   - Penanganan rate limit HTTP 429 berdasar header `Retry-After` dengan retry otomatis pada client.
   - Penanganan server error HTTP 5xx dengan exponential backoff bertahap.
   - Toleransi non-fatal error HTTP 4xx pada `putRoute()` tanpa melempar exception crash.
   - Penanganan tipe event tak dikenal (seperti `courier.route_updated`) yang diabaikan dan dicatat log-nya tepat 1 kali.
   - Deteksi kurir offline, pembersihan seketika blokir rute kurir terkait, dan pemulihan saat kurir online kembali.
-  - Preservasi data pesanan selesai/batal secara utuh (restoran, koordinat, reward asli) tanpa *fallback unknown*.
+  - Preservasi metadata order terminal jika metadata ada; jika tidak, lokasi/deadline/reward asli ditandai tidak tersedia, tanpa mengarang nilai.
 - **Unit Test Dashboard & Hydration (`test/dashboard.test.ts` - 4 Test):**
   - Endpoint `GET /api/snapshot` menyajikan data operasional lengkap.
   - Stream Server-Sent Events `GET /api/stream` mengirimkan header `text/event-stream`, direktif `retry: 2000`, dan snapshot pertama.
   - Endpoint `POST /api/practice` memicu inisialisasi practice run baru.
-  - Mekanisme persistensi `Store.save()` dan `Store.load()` memulihkan kursor event dan log riwayat saat restart (`START_PRACTICE=false`).
+  - Round-trip snapshot `Store.save()`/`Store.load()` memulihkan kursor, keputusan, skor, dan metadata order; simulasi pasca-restart memproses event delivered walau order sudah hilang dari state (`START_PRACTICE=false`).
 - **Integrasi End-to-End (`test/e2e.test.ts` - 2 Test):**
   - Eksekusi headless penuh 300 tick antara simulator HTTP nyata dan dispatcher mandiri.
   - Respon kegagalan otentikasi seketika saat API_KEY salah tanpa proses menggantung (*no hanging*).
@@ -238,6 +241,8 @@ Berikut adalah hasil pengujian langsung menggunakan `npm run bench` (`scripts/be
 ### Belum Dites / Potensi Skenario Ekstrem:
 - Simulasi koneksi jaringan fisik yang mengalami *packet loss* parah atau *intermittent jitter*.
 - Pengetesan beban ekstrem dengan 500 kurir dan ribuan pesanan aktif secara konkuren.
+- Pengujian terhadap API kota asli; hasil benchmark hanya menggambarkan simulator lokal dan asumsi yang tertulis di atas.
+- Pengalihan order yang masih `ASSIGNED` ke kurir lain secara proaktif. Planner sengaja merencanakan ulang hanya order `OPEN`; pelepasan lalu penugasan ulang akan memerlukan langkah transaksi tambahan dan validasi terhadap perilaku API kota asli.
 
 ---
 

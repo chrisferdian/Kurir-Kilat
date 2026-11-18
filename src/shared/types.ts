@@ -120,12 +120,28 @@ export interface ApiErrorBody {
 
 export type Risk = "ok" | "late" | "cancel";
 
-export interface OrderView extends Order {
+export interface OrderView
+  extends Omit<
+    Order,
+    | "restaurant"
+    | "dropoff"
+    | "created_tick"
+    | "estimated_ready_tick"
+    | "deadline_tick"
+    | "reward"
+  > {
+  restaurant: Restaurant | null;
+  dropoff: Point | null;
+  created_tick: number | null;
+  estimated_ready_tick: number | null;
+  deadline_tick: number | null;
+  reward: number | null;
   final_status: "DELIVERED" | "CANCELLED" | null;
   payout: number | null;
   eta_pickup: number | null;
   eta_dropoff: number | null;
   risk: Risk;
+  metadata_missing?: boolean;
 }
 
 export type DecisionKind = "assign" | "rejected" | "skip" | "error" | "event" | "info";

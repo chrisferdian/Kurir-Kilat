@@ -43,6 +43,7 @@ async function runSingleBench(
         SIM_URL: sim.url,
         API_KEY: apiKey,
         START_PRACTICE: true,
+        ALLOW_PRACTICE: false,
         SEED: seed,
         HEADLESS: true,
         STRATEGY: strategy,

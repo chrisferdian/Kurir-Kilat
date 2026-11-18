@@ -5,6 +5,7 @@ import http from "node:http";
 import { describe, expect, it } from "vitest";
 import { SimClient } from "../src/dispatcher/client";
 import { Store } from "../src/dispatcher/store";
+import { World } from "../src/sim/world";
 import type { Order, StateResponse } from "../src/shared/types";
 
 describe("Failure Handling & Resilience", () => {
@@ -113,12 +114,29 @@ describe("Failure Handling & Resilience", () => {
     const store = new Store();
     store.reset("run_test");
 
-    // Simulasi event courier.route_updated yang sengaja dikirim simulator untuk uji unknown event
-    store.applyEvents([
-      { seq: 1, tick: 5, type: "courier.route_updated", data: { courier_id: "c1", stops: 2 } },
-      { seq: 2, tick: 6, type: "courier.route_updated", data: { courier_id: "c2", stops: 3 } },
-      { seq: 3, tick: 7, type: "alien.ufo_spotted", data: {} },
-    ]);
+    // Ambil courier.route_updated dari simulator yang sesungguhnya, lalu
+    // pastikan dispatcher memperlakukannya sebagai tipe event yang belum dikenal.
+    const world = new World({
+      seed: 11,
+      ticks: 100,
+      tickMs: 100,
+      config: { ORDER_RATE: 0, COURIER_OFFLINE_CHANCE: 0 },
+    });
+    const courier = world.getState().couriers[0];
+    const order = world._addOrderForTest({
+      restaurant: { id: "r_test", x: courier.x, y: courier.y },
+      dropoff: { x: courier.x + 1, y: courier.y },
+    });
+    const route = [
+      { order_id: order.id, action: "pickup" as const },
+      { order_id: order.id, action: "dropoff" as const },
+    ];
+    expect(world.setRoute(courier.id, route).ok).toBe(true);
+    expect(world.setRoute(courier.id, route).ok).toBe(true);
+    const routeEvents = world.getEvents(0, 200).data.filter((event) => event.type === "courier.route_updated");
+    expect(routeEvents).toHaveLength(2);
+
+    store.applyEvents([...routeEvents, { seq: 999, tick: 7, type: "alien.ufo_spotted", data: {} }]);
 
     expect(store.unknownEventTypesSeen.has("courier.route_updated")).toBe(true);
     expect(store.unknownEventTypesSeen.has("alien.ufo_spotted")).toBe(true);
@@ -233,14 +251,62 @@ describe("Failure Handling & Resilience", () => {
     const finished = store.finishedOrders.get("o100");
     expect(finished).toBeDefined();
     // Data restoran & dropoff harus asli, BUKAN "unknown" atau (0,0)
-    expect(finished?.restaurant.id).toBe("r_enak");
-    expect(finished?.restaurant.x).toBe(12);
-    expect(finished?.restaurant.y).toBe(14);
-    expect(finished?.dropoff.x).toBe(22);
-    expect(finished?.dropoff.y).toBe(25);
+    expect(finished?.restaurant?.id).toBe("r_enak");
+    expect(finished?.restaurant?.x).toBe(12);
+    expect(finished?.restaurant?.y).toBe(14);
+    expect(finished?.dropoff?.x).toBe(22);
+    expect(finished?.dropoff?.y).toBe(25);
     expect(finished?.reward).toBe(15000);
     expect(finished?.payout).toBe(15000);
     expect(finished?.final_status).toBe("DELIVERED");
     expect(finished?.risk).toBe("ok");
+  });
+
+  it("7. Metadata terminal yang tidak tersedia ditandai hilang, bukan diisi koordinat palsu", () => {
+    const store = new Store();
+    store.reset("run_missing_metadata");
+    store.applyEvents([
+      { seq: 1, tick: 8, type: "order.cancelled", data: { order_id: "o_missing", penalty: 2500 } },
+    ]);
+
+    const finished = store.finishedOrders.get("o_missing");
+    expect(finished?.metadata_missing).toBe(true);
+    expect(finished?.restaurant).toBeNull();
+    expect(finished?.dropoff).toBeNull();
+    expect(finished?.deadline_tick).toBeNull();
+    expect(finished?.reward).toBeNull();
+  });
+
+  it("8. Event order.created dapat melengkapi terminal event walau state sudah tidak memuat order", () => {
+    const store = new Store();
+    store.reset("run_event_metadata");
+    store.applyState({
+      run: { id: "run_event_metadata", tick: 20, ticks: 100, tick_ms: 300, mode: "practice", status: "running" },
+      couriers: [],
+      orders: [],
+    });
+    const created = {
+      id: "o_from_event",
+      restaurant: { id: "r_event", x: 6, y: 8 },
+      dropoff: { x: 19, y: 24 },
+      created_tick: 2,
+      estimated_ready_tick: 7,
+      deadline_tick: 38,
+      reward: 12000,
+      premium: false,
+      status: "OPEN" as const,
+      courier_id: null,
+    };
+    store.applyEvents([
+      { seq: 1, tick: 2, type: "order.created", data: created },
+      { seq: 2, tick: 20, type: "order.delivered", data: { order_id: created.id, courier_id: "c2", payout: 9000, late_ticks: 1 } },
+    ]);
+
+    const finished = store.finishedOrders.get(created.id);
+    expect(finished?.restaurant).toEqual(created.restaurant);
+    expect(finished?.dropoff).toEqual(created.dropoff);
+    expect(finished?.deadline_tick).toBe(created.deadline_tick);
+    expect(finished?.reward).toBe(created.reward);
+    expect(finished?.metadata_missing).toBe(false);
   });
 });
